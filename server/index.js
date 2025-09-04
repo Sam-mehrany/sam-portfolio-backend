@@ -23,10 +23,10 @@ const ADMIN_USER = { username: 'sam', password: 'alien20xi3300' };
 
 // --- Middleware Setup ---
 
-// ✅ CORRECTED CORS CONFIGURATION
+// ✅ FINAL CORS CONFIGURATION
 const allowedOrigins = [
     'http://localhost:3000', // For local development
-    'https://sam-portfolio-frontend.liara.run' // ❗️ REPLACE with your live frontend URL
+    'https://sam-portfolio-frontend.liara.run' // Your live frontend URL
 ];
 app.use(cors({
     origin: function (origin, callback) {
@@ -65,9 +65,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
   else console.log('✅ Connected to the SQLite database.');
 });
 
-// ... (The rest of your code remains the same) ...
-// ...
-// ...
+// ... (The rest of your code, like db.serialize and all API routes, remains the same) ...
 
 db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS projects (
