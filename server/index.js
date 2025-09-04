@@ -22,11 +22,9 @@ const JWT_SECRET = 'your-super-secret-key-that-is-long-and-random';
 const ADMIN_USER = { username: 'sam', password: 'alien20xi3300' };
 
 // --- Middleware Setup ---
-
-// ✅ FINAL CORS CONFIGURATION
 const allowedOrigins = [
-    'http://localhost:3000', // For local development
-    'https://sam-portfolio-frontend.liara.run' // Your live frontend URL
+    'http://localhost:3000',
+    'https://sam-portfolio-frontend.liara.run'
 ];
 app.use(cors({
     origin: function (origin, callback) {
@@ -46,6 +44,12 @@ app.use('/uploads', express.static(dataDir));
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
+});
+
+// ✅ --- Health Check Route ---
+// This route will respond to Liara's health checks.
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'ok', message: 'Server is healthy' });
 });
 
 // --- Multer Setup for File Uploads ---
