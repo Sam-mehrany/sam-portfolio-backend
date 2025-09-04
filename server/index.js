@@ -12,9 +12,7 @@ const port = process.env.PORT || 8000;
 
 // --- DYNAMIC PATHS for Local vs. Production ---
 const isProduction = process.env.NODE_ENV === 'production';
-// In production, the disk is mounted at /uploads. Locally, it's inside the server folder.
 const dataDir = isProduction ? 'uploads' : path.join(__dirname, 'uploads');
-// Ensure the local uploads directory exists
 if (!isProduction && !fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir);
 }
@@ -24,10 +22,25 @@ const JWT_SECRET = 'your-super-secret-key-that-is-long-and-random';
 const ADMIN_USER = { username: 'sam', password: 'alien20xi3300' };
 
 // --- Middleware Setup ---
-app.use(cors({ origin: 'http://localhost:3000', credentials: true }));
+
+// ✅ CORRECTED CORS CONFIGURATION
+const allowedOrigins = [
+    'http://localhost:3000', // For local development
+    'https://sam-portfolio-frontend.liara.run' // ❗️ REPLACE with your live frontend URL
+];
+app.use(cors({
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true
+}));
+
 app.use(express.json());
 app.use(cookieParser());
-// Serve static files from the correct directory
 app.use('/uploads', express.static(dataDir));
 
 app.use((req, res, next) => {
@@ -46,14 +59,15 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // --- Database Setup ---
-// Use the correct path for the database file
 const dbPath = isProduction ? path.join(dataDir, 'cms.db') : path.join(__dirname, 'cms.db');
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) console.error("DB Connection Error:", err.message);
   else console.log('✅ Connected to the SQLite database.');
 });
 
-// ... (The rest of your code remains exactly the same) ...
+// ... (The rest of your code remains the same) ...
+// ...
+// ...
 
 db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS projects (
@@ -82,7 +96,6 @@ db.serialize(() => {
     content TEXT
   )`);
 
-  // Default data for pages table...
   const defaultHomepageContent = JSON.stringify({
     hero: { availability: "Open to collaborations", headline: "Marketing strategist...", skills: "B2B Marketing, UX Writing" },
     snapshot: { role: "Creative technologist", location: "Tehran, Iran", focus: "Product Design", socials: { instagram: "#", linkedin: "#", email: "#" } },
