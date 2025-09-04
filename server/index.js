@@ -21,7 +21,7 @@ if (!isProduction && !fs.existsSync(dataDir)) {
 
 // --- Config ---
 const JWT_SECRET = 'your-super-secret-key-that-is-long-and-random';
-const ADMIN_USER = { username: 'sam', password: '1234' };
+const ADMIN_USER = { username: 'sam', password: 'alien20xi3300' };
 
 // --- Middleware Setup ---
 app.use(cors({ origin: 'http://localhost:3000', credentials: true }));
