@@ -136,7 +136,7 @@ app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
   if (username === ADMIN_USER.username && password === ADMIN_USER.password) {
     const token = jwt.sign({ username: ADMIN_USER.username }, JWT_SECRET, { expiresIn: '8h' });
-    res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', path: '/', sameSite: 'lax' });
+    res.cookie('token', token, { httpOnly: true, secure: true, path: '/', sameSite: 'none' });
     return res.status(200).json({ success: true, message: 'Logged in successfully' });
   } else {
     return res.status(401).json({ success: false, message: 'Invalid credentials' });
