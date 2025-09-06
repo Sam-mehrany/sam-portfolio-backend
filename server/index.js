@@ -46,8 +46,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ --- Health Check Route ---
-// This route will respond to Liara's health checks.
+// --- Health Check Route ---
 app.get('/', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'Server is healthy' });
 });
@@ -68,8 +67,6 @@ const db = new sqlite3.Database(dbPath, (err) => {
   if (err) console.error("DB Connection Error:", err.message);
   else console.log('✅ Connected to the SQLite database.');
 });
-
-// ... (The rest of your code, like db.serialize and all API routes, remains the same) ...
 
 db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS projects (
@@ -231,9 +228,20 @@ app.delete('/api/messages/:id', protectRoute, (req, res) => {
 
 
 // --- PAGES API ROUTES ---
+// ✅ THIS FUNCTION HAS BEEN CORRECTED
 const parsePageRow = (row) => {
-    if (!row) return null;
-    try { return { ...row, content: JSON.parse(row.content) }; } catch (e) { return row; }
+  if (!row) return null;
+  try {
+    // Keep trying to parse the content as long as it's a string
+    let content = row.content;
+    while (typeof content === 'string') {
+      content = JSON.parse(content);
+    }
+    return { ...row, content: content };
+  } catch (e) {
+    // If parsing fails at any point, return the original row to avoid crashing
+    return row; 
+  }
 };
 app.get('/api/pages', protectRoute, (req, res) => {
     db.all("SELECT id, slug, title FROM pages", [], (err, rows) => {
