@@ -232,14 +232,14 @@ app.delete('/api/messages/:id', protectRoute, (req, res) => {
 const parsePageRow = (row) => {
   if (!row) return null;
   try {
-    // Keep trying to parse the content as long as it's a string
     let content = row.content;
+    // Keep trying to parse the content as long as it's a string
     while (typeof content === 'string') {
       content = JSON.parse(content);
     }
     return { ...row, content: content };
   } catch (e) {
-    // If parsing fails at any point, return the original row to avoid crashing
+    // If parsing fails, return the original row to avoid crashing
     return row; 
   }
 };
