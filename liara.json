@@ -5,7 +5,13 @@
   "disks": [
     {
       "name": "uploads",
-      "mountTo": "uploads"
+      "mountTo": "/app/uploads"
+    }
+  ],
+  "environments": [
+    {
+      "name": "NODE_ENV",
+      "value": "production"
     }
   ]
 }
