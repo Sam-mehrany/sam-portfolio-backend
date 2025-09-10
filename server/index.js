@@ -8,13 +8,16 @@ const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 
 const app = express();
-const port = process.env.PORT || 8000;
+const port = process.env.PORT || 3000; // Changed to match Liara config
 
 // --- DYNAMIC PATHS for Local vs. Production ---
 const isProduction = process.env.NODE_ENV === 'production';
-const dataDir = isProduction ? 'uploads' : path.join(__dirname, 'uploads');
-if (!isProduction && !fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir);
+// Updated path for Liara disk mount
+const dataDir = isProduction ? '/app/uploads' : path.join(__dirname, 'uploads');
+
+// Ensure directory exists
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
 }
 
 // --- Config ---
@@ -26,6 +29,7 @@ const allowedOrigins = [
     'http://localhost:3000',
     'https://sam-portfolio-frontend.liara.run'
 ];
+
 app.use(cors({
     origin: function (origin, callback) {
         if (!origin || allowedOrigins.indexOf(origin) !== -1) {
@@ -39,7 +43,12 @@ app.use(cors({
 
 app.use(express.json());
 app.use(cookieParser());
-app.use('/uploads', express.static(dataDir));
+
+// Static file serving - updated for Liara
+app.use('/uploads', express.static(dataDir, {
+  maxAge: '1d', // Cache for 1 day
+  etag: false
+}));
 
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
@@ -48,7 +57,12 @@ app.use((req, res, next) => {
 
 // --- Health Check Route ---
 app.get('/', (req, res) => {
-  res.status(200).json({ status: 'ok', message: 'Server is healthy' });
+  res.status(200).json({ 
+    status: 'ok', 
+    message: 'Server is healthy',
+    uploadsDir: dataDir,
+    isProduction 
+  });
 });
 
 // --- Multer Setup for File Uploads ---
@@ -59,13 +73,18 @@ const storage = multer.diskStorage({
     cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
   }
 });
-const upload = multer({ storage: storage });
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  }
+});
 
 // --- Database Setup ---
-const dbPath = isProduction ? path.join(dataDir, 'cms.db') : path.join(__dirname, 'cms.db');
+const dbPath = path.join(dataDir, 'cms.db');
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) console.error("DB Connection Error:", err.message);
-  else console.log('✅ Connected to the SQLite database.');
+  else console.log('✅ Connected to the SQLite database at:', dbPath);
 });
 
 db.serialize(() => {
@@ -116,7 +135,6 @@ db.serialize(() => {
   stmt.finalize();
 });
 
-
 // --- AUTHENTICATION ---
 const protectRoute = (req, res, next) => {
   const token = req.cookies.token;
@@ -129,24 +147,26 @@ const protectRoute = (req, res, next) => {
     return res.status(401).json({ message: 'Unauthorized: Invalid token' });
   }
 };
+
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
   if (username === ADMIN_USER.username && password === ADMIN_USER.password) {
     const token = jwt.sign({ username: ADMIN_USER.username }, JWT_SECRET, { expiresIn: '8h' });
-    res.cookie('token', token, { httpOnly: true, secure: true, path: '/', sameSite: 'none' });
+    res.cookie('token', token, { httpOnly: true, secure: isProduction, path: '/', sameSite: isProduction ? 'none' : 'lax' });
     return res.status(200).json({ success: true, message: 'Logged in successfully' });
   } else {
     return res.status(401).json({ success: false, message: 'Invalid credentials' });
   }
 });
+
 app.post('/api/logout', (req, res) => {
   res.cookie('token', '', { expires: new Date(0), path: '/' });
   res.status(200).json({ success: true, message: 'Logged out' });
 });
+
 app.get('/api/verify', protectRoute, (req, res) => {
   res.status(200).json({ success: true, message: 'Token is valid' });
 });
-
 
 // --- BLOG API ROUTES ---
 const parsePostRow = (row) => {
@@ -157,12 +177,14 @@ const parsePostRow = (row) => {
     content: JSON.parse(row.content || '[]')
   };
 };
+
 app.get('/api/posts', (req, res) => {
     db.all("SELECT id, slug, title, date, excerpt, tags FROM blog_posts ORDER BY date DESC", [], (err, rows) => {
         if (err) return res.status(500).json({ "error": err.message });
         res.json(rows.map(parsePostRow));
     });
 });
+
 app.get('/api/posts/slug/:slug', (req, res) => {
     db.get("SELECT * FROM blog_posts WHERE slug = ?", [req.params.slug], (err, row) => {
         if (err) return res.status(500).json({ "error": err.message });
@@ -170,6 +192,7 @@ app.get('/api/posts/slug/:slug', (req, res) => {
         else res.status(404).json({ message: "Post not found." });
     });
 });
+
 app.get('/api/posts/:id', protectRoute, (req, res) => {
     db.get("SELECT * FROM blog_posts WHERE id = ?", [req.params.id], (err, row) => {
         if (err) return res.status(500).json({ "error": err.message });
@@ -177,6 +200,7 @@ app.get('/api/posts/:id', protectRoute, (req, res) => {
         else res.status(404).json({ message: "Post not found." });
     });
 });
+
 app.post('/api/posts', protectRoute, (req, res) => {
     const { slug, title, date, excerpt, tags, content } = req.body;
     const sql = `INSERT INTO blog_posts (slug, title, date, excerpt, tags, content) VALUES (?,?,?,?,?,?)`;
@@ -186,6 +210,7 @@ app.post('/api/posts', protectRoute, (req, res) => {
         res.status(201).json({ "data": { id: this.lastID } });
     });
 });
+
 app.put('/api/posts/:id', protectRoute, (req, res) => {
     const { slug, title, date, excerpt, tags, content } = req.body;
     const sql = `UPDATE blog_posts SET slug = ?, title = ?, date = ?, excerpt = ?, tags = ?, content = ? WHERE id = ?`;
@@ -195,13 +220,13 @@ app.put('/api/posts/:id', protectRoute, (req, res) => {
         res.json({ message: "updated", changes: this.changes });
     });
 });
+
 app.delete('/api/posts/:id', protectRoute, (req, res) => {
     db.run('DELETE FROM blog_posts WHERE id = ?', req.params.id, function(err) {
         if (err) return res.status(500).json({ "error": err.message });
         res.json({ "message": "deleted", changes: this.changes });
     });
 });
-
 
 // --- MESSAGES API ROUTES ---
 app.post('/api/messages', (req, res) => {
@@ -213,12 +238,14 @@ app.post('/api/messages', (req, res) => {
         res.status(201).json({ success: true, id: this.lastID });
     });
 });
+
 app.get('/api/messages', protectRoute, (req, res) => {
     db.all("SELECT * FROM messages ORDER BY submitted_at DESC", [], (err, rows) => {
         if (err) return res.status(500).json({ "error": err.message });
         res.json(rows);
     });
 });
+
 app.delete('/api/messages/:id', protectRoute, (req, res) => {
     db.run('DELETE FROM messages WHERE id = ?', req.params.id, function(err) {
         if (err) return res.status(500).json({ "error": err.message });
@@ -226,29 +253,27 @@ app.delete('/api/messages/:id', protectRoute, (req, res) => {
     });
 });
 
-
 // --- PAGES API ROUTES ---
-// ✅ THIS FUNCTION HAS BEEN CORRECTED
 const parsePageRow = (row) => {
   if (!row) return null;
   try {
     let content = row.content;
-    // Keep trying to parse the content as long as it's a string
     while (typeof content === 'string') {
       content = JSON.parse(content);
     }
     return { ...row, content: content };
   } catch (e) {
-    // If parsing fails, return the original row to avoid crashing
     return row; 
   }
 };
+
 app.get('/api/pages', protectRoute, (req, res) => {
     db.all("SELECT id, slug, title FROM pages", [], (err, rows) => {
         if (err) return res.status(500).json({ "error": err.message });
         res.json(rows);
     });
 });
+
 app.get('/api/pages/:slug', (req, res) => {
     db.get("SELECT * FROM pages WHERE slug = ?", [req.params.slug], (err, row) => {
         if (err) return res.status(500).json({ "error": err.message });
@@ -256,6 +281,7 @@ app.get('/api/pages/:slug', (req, res) => {
         else res.status(404).json({ "message": "Page not found." });
     });
 });
+
 app.put('/api/pages/:slug', protectRoute, (req, res) => {
     const { title, content } = req.body;
     const contentToSave = typeof content === 'object' ? JSON.stringify(content) : content;
@@ -265,21 +291,25 @@ app.put('/api/pages/:slug', protectRoute, (req, res) => {
     });
 });
 
-
 // --- PROJECTS API ROUTES ---
 const parseProjectRow = (row) => {
   if (!row) return null;
   return { ...row, tags: JSON.parse(row.tags || '[]'), images: JSON.parse(row.images || '[]'), content: JSON.parse(row.content || '[]') };
 };
+
 app.post('/api/upload', protectRoute, upload.array('images', 10), (req, res) => {
-  res.json({ message: 'Files uploaded successfully', paths: req.files.map(file => `/uploads/${file.filename}`) });
+  const paths = req.files.map(file => `/uploads/${file.filename}`);
+  console.log('Files uploaded:', paths);
+  res.json({ message: 'Files uploaded successfully', paths });
 });
+
 app.get('/api/projects', (req, res) => {
   db.all("SELECT * FROM projects ORDER BY year DESC, id DESC", [], (err, rows) => {
     if (err) return res.status(500).json({ "error": err.message });
     res.json(rows.map(parseProjectRow));
   });
 });
+
 app.get('/api/projects/slug/:slug', (req, res) => {
   db.get("SELECT * FROM projects WHERE slug = ?", [req.params.slug], (err, row) => {
     if (err) return res.status(500).json({ "error": err.message });
@@ -287,6 +317,7 @@ app.get('/api/projects/slug/:slug', (req, res) => {
     else res.status(404).json({ message: "Project not found." });
   });
 });
+
 app.get('/api/projects/:id', protectRoute, (req, res) => {
   db.get("SELECT * FROM projects WHERE id = ?", [req.params.id], (err, row) => {
     if (err) return res.status(500).json({ "error": err.message });
@@ -294,6 +325,7 @@ app.get('/api/projects/:id', protectRoute, (req, res) => {
     else res.status(404).json({ message: "Project not found." });
   });
 });
+
 app.post('/api/projects', protectRoute, (req, res) => {
   const { slug, title, year, blurb, tags, thumbnail, images, outcome, challenge, solution, content } = req.body;
   const sql = `INSERT INTO projects (slug, title, year, blurb, tags, thumbnail, images, outcome, challenge, solution, content) VALUES (?,?,?,?,?,?,?,?,?,?,?)`;
@@ -303,6 +335,7 @@ app.post('/api/projects', protectRoute, (req, res) => {
     res.status(201).json({ "data": { id: this.lastID } });
   });
 });
+
 app.put('/api/projects/:id', protectRoute, (req, res) => {
   const { slug, title, year, blurb, tags, thumbnail, images, outcome, challenge, solution, content } = req.body;
   const sql = `UPDATE projects SET slug = ?, title = ?, year = ?, blurb = ?, tags = ?, thumbnail = ?, images = ?, outcome = ?, challenge = ?, solution = ?, content = ? WHERE id = ?`;
@@ -312,6 +345,7 @@ app.put('/api/projects/:id', protectRoute, (req, res) => {
     res.json({ message: "updated", changes: this.changes });
   });
 });
+
 app.delete('/api/projects/:id', protectRoute, (req, res) => {
   db.run('DELETE FROM projects WHERE id = ?', req.params.id, function(err) {
     if (err) return res.status(500).json({ "error": err.message });
@@ -320,5 +354,7 @@ app.delete('/api/projects/:id', protectRoute, (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`✅ Express CMS Server running at http://localhost:${port}`);
+  console.log(`✅ Express CMS Server running at port ${port}`);
+  console.log(`📁 Uploads directory: ${dataDir}`);
+  console.log(`🌍 Environment: ${isProduction ? 'Production' : 'Development'}`);
 });
