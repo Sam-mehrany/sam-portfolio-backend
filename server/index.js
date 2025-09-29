@@ -27,7 +27,7 @@ const ADMIN_USER = { username: 'sam', password: 'alien20xi3300' };
 // --- Middleware Setup ---
 const allowedOrigins = [
     'http://localhost:3000',
-    'https://sam-portfolio-frontend.liara.run'
+    'https://sam-portfolio-frontend.liara.run',
     'https://sammehrany.com'
 ];
 
