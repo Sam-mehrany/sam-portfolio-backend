@@ -28,6 +28,7 @@ const ADMIN_USER = { username: 'sam', password: 'alien20xi3300' };
 const allowedOrigins = [
     'http://localhost:3000',
     'https://sam-portfolio-frontend.liara.run'
+    'https://sammehrany.com'
 ];
 
 app.use(cors({
