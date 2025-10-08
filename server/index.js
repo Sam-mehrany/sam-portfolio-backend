@@ -8,11 +8,10 @@ const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 
 const app = express();
-const port = process.env.PORT || 3000; // Changed to match Liara config
+const port = process.env.PORT || 3000;
 
 // --- DYNAMIC PATHS for Local vs. Production ---
 const isProduction = process.env.NODE_ENV === 'production';
-// Updated path for Liara disk mount
 const dataDir = isProduction ? '/app/uploads' : path.join(__dirname, 'uploads');
 
 // Ensure directory exists
@@ -45,9 +44,9 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-// Static file serving - updated for Liara
+// Static file serving
 app.use('/uploads', express.static(dataDir, {
-  maxAge: '1d', // Cache for 1 day
+  maxAge: '1d',
   etag: false
 }));
 
@@ -89,6 +88,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
 });
 
 db.serialize(() => {
+  // Projects table
   db.run(`CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT, 
     slug TEXT NOT NULL UNIQUE, 
@@ -103,8 +103,24 @@ db.serialize(() => {
     solution TEXT, 
     content TEXT
   )`);
-  db.run(`CREATE TABLE IF NOT EXISTS pages (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT NOT NULL UNIQUE, title TEXT, content TEXT)`);
-  db.run(`CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, project_description TEXT NOT NULL, contact_info TEXT NOT NULL, submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+
+  // Pages table
+  db.run(`CREATE TABLE IF NOT EXISTS pages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, 
+    slug TEXT NOT NULL UNIQUE, 
+    title TEXT, 
+    content TEXT
+  )`);
+
+  // Messages table
+  db.run(`CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, 
+    project_description TEXT NOT NULL, 
+    contact_info TEXT NOT NULL, 
+    submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+
+  // Blog posts table
   db.run(`CREATE TABLE IF NOT EXISTS blog_posts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     slug TEXT NOT NULL UNIQUE,
@@ -115,22 +131,95 @@ db.serialize(() => {
     content TEXT
   )`);
 
+  // ⭐ NEW: Settings table
+  db.run(`CREATE TABLE IF NOT EXISTS settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL UNIQUE,
+    value TEXT NOT NULL
+  )`, (err) => {
+    if (err) {
+      console.error("Error creating settings table:", err.message);
+    } else {
+      console.log('✅ Settings table created or already exists');
+    }
+  });
+
+  // ⭐ Insert default settings
+  const defaultSettings = [
+    { key: 'site_name', value: 'Sam Mehrany' },
+    { key: 'nav_links', value: JSON.stringify([
+      { href: '/', label: 'Home' },
+      { href: '/about', label: 'About' },
+      { href: '/projects', label: 'Projects' },
+      { href: '/blog', label: 'Blog' }
+    ]) }
+  ];
+
+  const settingsStmt = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)");
+  defaultSettings.forEach(s => {
+    settingsStmt.run(s.key, s.value, (err) => {
+      if (err) console.error(`Error inserting setting ${s.key}:`, err.message);
+    });
+  });
+  settingsStmt.finalize();
+
+  // ⭐ UPDATED: Default homepage content with h1 field
   const defaultHomepageContent = JSON.stringify({
-    hero: { availability: "Open to collaborations", headline: "Marketing strategist...", skills: "B2B Marketing, UX Writing" },
-    snapshot: { role: "Creative technologist", location: "Tehran, Iran", focus: "Product Design", socials: { instagram: "#", linkedin: "#", email: "#" } },
-    work: { title: "Selected Work", subtitle: "Key highlights...", selectedProjects: [] }
+    hero: { 
+      h1: "Sam Mehrany",
+      availability: "Open to collaborations", 
+      headline: "Marketing strategist and UX writer specializing in B2B transitions, AI-powered campaigns, and high-impact brand storytelling.", 
+      skills: "B2B Marketing, UX Writing, AI Video Production" 
+    },
+    snapshot: { 
+      role: "Creative technologist", 
+      location: "Tehran, Iran", 
+      focus: "Product Design", 
+      socials: { 
+        instagram: "https://www.instagram.com/", 
+        linkedin: "https://www.linkedin.com/", 
+        email: "mailto:email@example.com" 
+      } 
+    },
+    work: { 
+      title: "Selected Work", 
+      subtitle: "Key highlights from my portfolio", 
+      selectedProjects: [] 
+    }
   });
+
   const defaultAboutPageContent = JSON.stringify({
-    summary: "Experienced UI/UX Designer...",
-    experiences: [{ id: 1, role: "Senior UI/UX Designer...", company: "Ronix Tools", period: "2021 – Present", points: "Spearheaded..." }],
-    skills: { technical: ["Design Systems"], soft: ["Empathy"], tools: ["Figma"] },
-    educations: [{ id: 1, degree: "Bachelor of Arts...", university: "Islamic Azad University..." }]
+    summary: "Experienced UI/UX Designer with a passion for creating intuitive and engaging digital experiences...",
+    experiences: [
+      { 
+        id: 1, 
+        role: "Senior UI/UX Designer & Marketing Strategist", 
+        company: "Ronix Tools", 
+        period: "2021 – Present", 
+        points: "Spearheaded B2B website redesign for German market, developed AI-powered video campaigns, managed multi-channel content strategy..." 
+      }
+    ],
+    skills: { 
+      technical: ["Design Systems", "Figma", "Adobe Suite"], 
+      soft: ["Empathy", "Communication", "Problem Solving"], 
+      tools: ["Figma", "Sketch", "Adobe XD"] 
+    },
+    educations: [
+      { 
+        id: 1, 
+        degree: "Bachelor of Arts in Graphic Design", 
+        university: "Islamic Azad University", 
+        period: "2017 – 2021" 
+      }
+    ]
   });
+
   const defaultPages = [
     { slug: 'home', title: 'Homepage Content', content: defaultHomepageContent },
     { slug: 'about', title: 'About Me', content: defaultAboutPageContent },
     { slug: 'contact', title: 'Contact Us', content: 'This is the default contact page content.' }
   ];
+
   const stmt = db.prepare("INSERT OR IGNORE INTO pages (slug, title, content) VALUES (?, ?, ?)");
   defaultPages.forEach(page => stmt.run(page.slug, page.title, page.content));
   stmt.finalize();
@@ -167,6 +256,48 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/verify', protectRoute, (req, res) => {
   res.status(200).json({ success: true, message: 'Token is valid' });
+});
+
+// ⭐⭐⭐ NEW: SETTINGS API ROUTES ⭐⭐⭐
+app.get('/api/settings', (req, res) => {
+  db.all("SELECT * FROM settings", [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    
+    const settings = {};
+    rows.forEach(row => {
+      // Parse JSON for nav_links
+      if (row.key === 'nav_links') {
+        try {
+          settings[row.key] = JSON.parse(row.value);
+        } catch (e) {
+          settings[row.key] = [];
+        }
+      } else {
+        settings[row.key] = row.value;
+      }
+    });
+    
+    res.json(settings);
+  });
+});
+
+app.put('/api/settings', protectRoute, (req, res) => {
+  const { site_name, nav_links } = req.body;
+  
+  // Update site_name
+  db.run("UPDATE settings SET value = ? WHERE key = 'site_name'", [site_name], (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    
+    // Update nav_links
+    db.run("UPDATE settings SET value = ? WHERE key = 'nav_links'", [JSON.stringify(nav_links)], (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      
+      res.json({ 
+        success: true, 
+        message: 'Settings updated successfully' 
+      });
+    });
+  });
 });
 
 // --- BLOG API ROUTES ---
@@ -232,7 +363,9 @@ app.delete('/api/posts/:id', protectRoute, (req, res) => {
 // --- MESSAGES API ROUTES ---
 app.post('/api/messages', (req, res) => {
     const { projectDescription, contactInfo } = req.body;
-    if (!projectDescription || !contactInfo) { return res.status(400).json({ error: "Missing required fields." }); }
+    if (!projectDescription || !contactInfo) { 
+      return res.status(400).json({ error: "Missing required fields." }); 
+    }
     const sql = `INSERT INTO messages (project_description, contact_info) VALUES (?, ?)`;
     db.run(sql, [projectDescription, contactInfo], function(err) {
         if (err) return res.status(500).json({ "error": err.message });
@@ -295,7 +428,12 @@ app.put('/api/pages/:slug', protectRoute, (req, res) => {
 // --- PROJECTS API ROUTES ---
 const parseProjectRow = (row) => {
   if (!row) return null;
-  return { ...row, tags: JSON.parse(row.tags || '[]'), images: JSON.parse(row.images || '[]'), content: JSON.parse(row.content || '[]') };
+  return { 
+    ...row, 
+    tags: JSON.parse(row.tags || '[]'), 
+    images: JSON.parse(row.images || '[]'), 
+    content: JSON.parse(row.content || '[]') 
+  };
 };
 
 app.post('/api/upload', protectRoute, upload.array('images', 10), (req, res) => {
