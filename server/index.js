@@ -145,15 +145,16 @@ db.serialize(() => {
   });
 
   // ⭐ Insert default settings
-  const defaultSettings = [
-    { key: 'site_name', value: 'Sam Mehrany' },
-    { key: 'nav_links', value: JSON.stringify([
-      { href: '/', label: 'Home' },
-      { href: '/about', label: 'About' },
-      { href: '/projects', label: 'Projects' },
-      { href: '/blog', label: 'Blog' }
-    ]) }
-  ];
+ const defaultSettings = [
+  { key: 'site_name', value: 'Sam Mehrany' },
+  { key: 'site_title', value: 'Sam Mehrany - Portfolio' }, // ⭐ ADD THIS LINE
+  { key: 'nav_links', value: JSON.stringify([
+    { href: '/', label: 'Home' },
+    { href: '/about', label: 'About' },
+    { href: '/projects', label: 'Projects' },
+    { href: '/blog', label: 'Blog' }
+  ]) }
+];
 
   const settingsStmt = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)");
   defaultSettings.forEach(s => {
@@ -282,19 +283,24 @@ app.get('/api/settings', (req, res) => {
 });
 
 app.put('/api/settings', protectRoute, (req, res) => {
-  const { site_name, nav_links } = req.body;
+  const { site_name, site_title, nav_links } = req.body; // ⭐ ADD site_title
   
   // Update site_name
   db.run("UPDATE settings SET value = ? WHERE key = 'site_name'", [site_name], (err) => {
     if (err) return res.status(500).json({ error: err.message });
     
-    // Update nav_links
-    db.run("UPDATE settings SET value = ? WHERE key = 'nav_links'", [JSON.stringify(nav_links)], (err) => {
+    // ⭐ ADD: Update site_title
+    db.run("UPDATE settings SET value = ? WHERE key = 'site_title'", [site_title], (err) => {
       if (err) return res.status(500).json({ error: err.message });
       
-      res.json({ 
-        success: true, 
-        message: 'Settings updated successfully' 
+      // Update nav_links
+      db.run("UPDATE settings SET value = ? WHERE key = 'nav_links'", [JSON.stringify(nav_links)], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        
+        res.json({ 
+          success: true, 
+          message: 'Settings updated successfully' 
+        });
       });
     });
   });
