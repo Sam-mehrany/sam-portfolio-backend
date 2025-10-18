@@ -133,6 +133,7 @@ db.serialize(() => {
     }
 
     const hasVideosColumn = columns.some(col => col.name === 'videos');
+    const hasViewsColumn = columns.some(col => col.name === 'views');
 
     if (!hasVideosColumn) {
       console.log('⚠️  Videos column not found. Adding it now...');
@@ -145,6 +146,19 @@ db.serialize(() => {
       });
     } else {
       console.log('✅ Videos column already exists in projects table');
+    }
+
+    if (!hasViewsColumn) {
+      console.log('⚠️  Views column not found. Adding it now...');
+      db.run(`ALTER TABLE projects ADD COLUMN views INTEGER DEFAULT 0`, (err) => {
+        if (err) {
+          console.error("❌ Error adding views column:", err.message);
+        } else {
+          console.log('✅ Successfully added views column to projects table');
+        }
+      });
+    } else {
+      console.log('✅ Views column already exists in projects table');
     }
   });
 
@@ -175,6 +189,29 @@ db.serialize(() => {
     content TEXT
   )`);
 
+  // Migration: Add views column to blog_posts if it doesn't exist
+  db.all("PRAGMA table_info(blog_posts)", [], (err, columns) => {
+    if (err) {
+      console.error("Error checking blog_posts schema:", err.message);
+      return;
+    }
+
+    const hasViewsColumn = columns.some(col => col.name === 'views');
+
+    if (!hasViewsColumn) {
+      console.log('⚠️  Views column not found in blog_posts. Adding it now...');
+      db.run(`ALTER TABLE blog_posts ADD COLUMN views INTEGER DEFAULT 0`, (err) => {
+        if (err) {
+          console.error("❌ Error adding views column to blog_posts:", err.message);
+        } else {
+          console.log('✅ Successfully added views column to blog_posts table');
+        }
+      });
+    } else {
+      console.log('✅ Views column already exists in blog_posts table');
+    }
+  });
+
   // ⭐ NEW: Settings table
   db.run(`CREATE TABLE IF NOT EXISTS settings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -185,6 +222,22 @@ db.serialize(() => {
       console.error("Error creating settings table:", err.message);
     } else {
       console.log('✅ Settings table created or already exists');
+    }
+  });
+
+  // ⭐ NEW: Views tracking table for unique views
+  db.run(`CREATE TABLE IF NOT EXISTS views (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_type TEXT NOT NULL,
+    content_slug TEXT NOT NULL,
+    viewer_id TEXT NOT NULL,
+    viewed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(content_type, content_slug, viewer_id)
+  )`, (err) => {
+    if (err) {
+      console.error("Error creating views table:", err.message);
+    } else {
+      console.log('✅ Views tracking table created or already exists');
     }
   });
 
@@ -541,6 +594,70 @@ app.delete('/api/projects/:id', protectRoute, (req, res) => {
     if (err) return res.status(500).json({ "error": err.message });
     res.json({ "message": "deleted", changes: this.changes });
   });
+});
+
+// --- VIEW TRACKING API ROUTES ---
+// Helper function to generate unique viewer ID from request
+const getViewerId = (req) => {
+  // Use IP address and user agent to create a unique identifier
+  const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
+  const userAgent = req.headers['user-agent'] || 'unknown';
+  // Simple hash function to create viewer ID
+  return Buffer.from(`${ip}-${userAgent}`).toString('base64').substring(0, 50);
+};
+
+// Track view for a project or blog post
+app.post('/api/views/:contentType/:slug', (req, res) => {
+  const { contentType, slug } = req.params;
+  const viewerId = getViewerId(req);
+
+  // Validate content type
+  if (!['project', 'post'].includes(contentType)) {
+    return res.status(400).json({ error: 'Invalid content type' });
+  }
+
+  // Insert view record (will be ignored if already exists due to UNIQUE constraint)
+  db.run(
+    'INSERT OR IGNORE INTO views (content_type, content_slug, viewer_id) VALUES (?, ?, ?)',
+    [contentType, slug, viewerId],
+    function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+
+      // Only increment counter if a new view was recorded
+      if (this.changes > 0) {
+        const tableName = contentType === 'project' ? 'projects' : 'blog_posts';
+        db.run(
+          `UPDATE ${tableName} SET views = COALESCE(views, 0) + 1 WHERE slug = ?`,
+          [slug],
+          function(err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true, newView: true });
+          }
+        );
+      } else {
+        res.json({ success: true, newView: false });
+      }
+    }
+  );
+});
+
+// Get view count for a specific content
+app.get('/api/views/:contentType/:slug', (req, res) => {
+  const { contentType, slug } = req.params;
+
+  if (!['project', 'post'].includes(contentType)) {
+    return res.status(400).json({ error: 'Invalid content type' });
+  }
+
+  const tableName = contentType === 'project' ? 'projects' : 'blog_posts';
+  db.get(
+    `SELECT views FROM ${tableName} WHERE slug = ?`,
+    [slug],
+    (err, row) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ views: row?.views || 0 });
+    }
+  );
 });
 
 app.listen(port, () => {
